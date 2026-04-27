@@ -4,7 +4,24 @@ import axios from 'axios';
 let panel: vscode.WebviewPanel | undefined;
 let decorationType: vscode.TextEditorDecorationType | undefined;
 
+// ✅ session state (real fix)
+let isReviewMode = false;
+
 export function activate(context: vscode.ExtensionContext) {
+    console.log("Spec Reviewer Activated");
+    vscode.window.showInformationMessage("Spec Reviewer has been activated");
+
+    // ✅ IMPORTANT: detect edits → exit review mode + clear highlights
+    vscode.workspace.onDidChangeTextDocument((event) => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) return;
+
+        isReviewMode = false;
+
+        if (decorationType) {
+            editor.setDecorations(decorationType, []);
+        }
+    });
 
     const disposable = vscode.commands.registerCommand('spec-reviewer.reviewSpec', async () => {
 
@@ -26,7 +43,8 @@ export function activate(context: vscode.ExtensionContext) {
 
         const apiKey = await vscode.window.showInputBox({
             prompt: `Enter your ${provider} API Key`,
-            ignoreFocusOut: true
+            ignoreFocusOut: true,
+            password: true
         });
 
         if (!apiKey) return;
@@ -35,7 +53,7 @@ export function activate(context: vscode.ExtensionContext) {
             location: vscode.ProgressLocation.Notification,
             title: "Analyzing spec...",
             cancellable: false
-        }, async () => {});
+        }, async () => { });
 
         try {
 
@@ -49,8 +67,6 @@ export function activate(context: vscode.ExtensionContext) {
             const ai = data.ai_analysis ?? {};
             const enhanced = data.enhanced_spec ?? "No suggestion generated";
 
-            // ------------------ NORMALIZE ISSUES ------------------
-
             const ruleIssues = [
                 ...(data.rule_issues ?? []),
                 ...((ai.ambiguities ?? []).map((x: string) => ({
@@ -59,13 +75,24 @@ export function activate(context: vscode.ExtensionContext) {
                 })))
             ];
 
-            // ------------------ HIGHLIGHT AMBIGUOUS TERMS ------------------
+            // ✅ ENTER review mode ONLY after analysis
+            isReviewMode = true;
 
-            if (decorationType) {
+            // ------------------ CLEAR OLD DECORATIONS ------------------
+
+            if (decorationType && editor) {
+                editor.setDecorations(decorationType, []);
                 decorationType.dispose();
+                decorationType = undefined;
             }
 
             const decorations: vscode.DecorationOptions[] = [];
+
+            // ❌ BLOCK if not in review mode
+            if (!isReviewMode) {
+                return;
+            }
+
             const textContent = editor.document.getText();
 
             ruleIssues.forEach((issue: any) => {
@@ -97,9 +124,7 @@ export function activate(context: vscode.ExtensionContext) {
                 border: '1px solid rgba(255, 75, 75, 0.6)'
             });
 
-            setTimeout(() => {
-                editor.setDecorations(decorationType!, decorations);
-            }, 30);
+            editor.setDecorations(decorationType, decorations);
 
             // ------------------ WEBVIEW ------------------
 
@@ -113,28 +138,27 @@ export function activate(context: vscode.ExtensionContext) {
                         retainContextWhenHidden: true
                     }
                 );
+
+                panel.onDidDispose(() => {
+                    panel = undefined;
+                });
+
+                panel.webview.onDidReceiveMessage(async (message) => {
+
+                    if (message.command === 'copy') {
+                        await vscode.env.clipboard.writeText(message.text);
+                        vscode.window.showInformationMessage("✨ Improved spec copied!");
+                    }
+                });
+
             } else {
-                panel.reveal();
+                panel.reveal(vscode.ViewColumn.Beside);
             }
-
-            // ------------------ COPY HANDLER ------------------
-
-            panel.webview.onDidReceiveMessage(async (message) => {
-
-                if (message.command === 'copy') {
-                    await vscode.env.clipboard.writeText(message.text);
-                    vscode.window.showInformationMessage("✨ Improved spec copied!");
-                }
-            });
-
-            // ------------------ LIST HELPER ------------------
 
             const list = (arr: string[]) => {
                 if (!arr || arr.length === 0) return `<p class="muted">None</p>`;
                 return `<ul>${arr.map(i => `<li>${i}</li>`).join('')}</ul>`;
             };
-
-            // ------------------ BEAUTIFUL UI ------------------
 
             panel.webview.html = `
 <!DOCTYPE html>
@@ -142,24 +166,21 @@ export function activate(context: vscode.ExtensionContext) {
 <head>
 <meta charset="UTF-8" />
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
-
 body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     padding: 20px;
     background: #0f111a;
     color: #e6e6e6;
+    line-height: 1.5;
 }
 
-h1 {
-    font-size: 18px;
-    margin-bottom: 16px;
-}
+h1 { font-size: 18px; margin-bottom: 16px; }
 
 h2 {
-    font-size: 13px;
+    font-size: 12px;
     margin-top: 18px;
     color: #7cc7ff;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
 }
 
@@ -171,13 +192,8 @@ h2 {
     margin-top: 10px;
 }
 
-ul {
-    padding-left: 18px;
-}
-
-li {
-    margin-bottom: 6px;
-}
+ul { padding-left: 18px; }
+li { margin-bottom: 6px; }
 
 pre {
     white-space: pre-wrap;
@@ -185,6 +201,7 @@ pre {
     padding: 12px;
     border-radius: 10px;
     border: 1px solid #2a2f3a;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 button {
@@ -202,9 +219,7 @@ button:hover {
     transform: translateY(-1px);
 }
 
-.muted {
-    opacity: 0.6;
-}
+.muted { opacity: 0.6; }
 </style>
 </head>
 
@@ -220,14 +235,6 @@ button:hover {
 <h2>⚠️ Risks</h2>
 <div class="card">
     ${list(ai.risks ?? [])}
-</div>
-
-<h2>❓ Clarifications Needed</h2>
-<div class="card">
-    ${list([
-        ...(ai.ambiguities ?? []),
-        ...(ai.measurability_issues ?? [])
-    ])}
 </div>
 
 <h2>✨ Improved Spec</h2>
@@ -251,11 +258,10 @@ function copySpec() {
 </body>
 </html>
 `;
-        }
 
-        catch (err: any) {
-            vscode.window.showErrorMessage('Error calling backend');
+        } catch (err: any) {
             console.error(err);
+            vscode.window.showErrorMessage(`Backend error: ${err.message}`);
         }
     });
 

@@ -1,16 +1,18 @@
 {
-  "name": "spec-reviewer",
-  "displayName": "spec-reviewer-extension",
+  "name": "Review-The-Specs",
+  "displayName": "Review-Specs",
   "description": "This is an extension built to review your specs in journey of Spec Driven Development",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "publisher": "DeekshaZeroDay",
   "engines": {
-    "vscode": "^1.112.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onCommand:spec-reviewer.reviewSpec"],
+  "activationEvents": [
+    "onCommand:spec-reviewer.reviewSpec"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -33,8 +35,8 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.116.0",
+    "@types/node": "^22.19.17",
+    "@types/vscode": "^1.75.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.3",
@@ -46,5 +48,10 @@
   },
   "dependencies": {
     "axios": "^1.15.2"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Deeks900/ReviewSpecExtension"
+  },
+  "icon": "images/icon.png"
 }
